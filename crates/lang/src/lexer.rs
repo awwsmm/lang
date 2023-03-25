@@ -43,6 +43,7 @@ pub(crate) enum SyntaxKind {
     Error,
 
     Root,
+    BinOp,
 }
 
 pub(crate) struct Lexer<'a> {

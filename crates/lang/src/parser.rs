@@ -1,7 +1,8 @@
 use std::iter::Peekable;
 
-use rowan::{GreenNode, GreenNodeBuilder, Language};
+use rowan::{Checkpoint, GreenNode, GreenNodeBuilder, Language};
 
+use crate::expr::expr;
 use crate::lexer::{Lexer, SyntaxKind};
 use crate::syntax::{LangLanguage, SyntaxNode};
 
@@ -21,10 +22,7 @@ impl<'a> Parser<'a> {
     pub fn parse(mut self) -> Parse {
         self.start_node(SyntaxKind::Root);
 
-        match self.peek() {
-            Some(SyntaxKind::Number) | Some(SyntaxKind::Ident) => self.bump(),
-            _ => {}
-        }
+        expr(&mut self);
 
         self.finish_node();
 
@@ -33,19 +31,28 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub(crate) fn start_node_at(&mut self, checkpoint: Checkpoint, kind: SyntaxKind) {
+        self.builder
+            .start_node_at(checkpoint, LangLanguage::kind_to_raw(kind));
+    }
+
     fn start_node(&mut self, kind: SyntaxKind) {
         self.builder.start_node(LangLanguage::kind_to_raw(kind))
     }
 
-    fn finish_node(&mut self) {
+    pub(crate) fn finish_node(&mut self) {
         self.builder.finish_node();
     }
 
-    fn peek(&mut self) -> Option<SyntaxKind> {
+    pub(crate) fn checkpoint(&self) -> Checkpoint {
+        self.builder.checkpoint()
+    }
+
+    pub(crate) fn peek(&mut self) -> Option<SyntaxKind> {
         self.lexer.peek().map(|(kind, _)| *kind)
     }
 
-    fn bump(&mut self) {
+    pub(crate) fn bump(&mut self) {
         let (kind, text) = self.lexer.next().unwrap();
 
         self.builder
@@ -68,15 +75,16 @@ impl Parse {
 }
 
 #[cfg(test)]
+pub(crate) fn check(input: &str, expected_tree: expect_test::Expect) {
+    let parse = Parser::new(input).parse();
+    expected_tree.assert_eq(&parse.debug_tree());
+}
+
+#[cfg(test)]
 mod tests {
-    use expect_test::{expect, Expect};
+    use expect_test::expect;
 
     use super::*;
-
-    fn check(input: &str, expected_tree: Expect) {
-        let parse = Parser::new(input).parse();
-        expected_tree.assert_eq(&parse.debug_tree());
-    }
 
     #[test]
     fn parse_nothing() {
@@ -84,22 +92,53 @@ mod tests {
     }
 
     #[test]
-    fn parse_number() {
+    fn parse_simple_binary_expression() {
         check(
-            "123",
+            "1+2",
             expect![[r#"
 Root@0..3
-  Number@0..3 "123""#]],
+  BinOp@0..3
+    Number@0..1 "1"
+    Plus@1..2 "+"
+    Number@2..3 "2""#]],
         );
     }
 
     #[test]
-    fn parse_binding_usage() {
+    fn parse_left_associative_binary_expression() {
         check(
-            "counter",
+            "1+2+3+4",
             expect![[r#"
 Root@0..7
-  Ident@0..7 "counter""#]],
+  BinOp@0..7
+    BinOp@0..5
+      BinOp@0..3
+        Number@0..1 "1"
+        Plus@1..2 "+"
+        Number@2..3 "2"
+      Plus@3..4 "+"
+      Number@4..5 "3"
+    Plus@5..6 "+"
+    Number@6..7 "4""#]],
+        );
+    }
+
+    #[test]
+    fn parse_binary_expression_with_mixed_binding_power() {
+        check(
+            "1+2*3-4",
+            expect![[r#"
+Root@0..7
+  BinOp@0..7
+    BinOp@0..5
+      Number@0..1 "1"
+      Plus@1..2 "+"
+      BinOp@2..5
+        Number@2..3 "2"
+        Star@3..4 "*"
+        Number@4..5 "3"
+    Minus@5..6 "-"
+    Number@6..7 "4""#]],
         );
     }
 }
