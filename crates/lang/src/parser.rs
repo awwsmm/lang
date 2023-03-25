@@ -1,24 +1,32 @@
-use crate::lexer::SyntaxKind;
-use crate::syntax::{LangLanguage, SyntaxNode};
-use logos::Logos;
+use std::iter::Peekable;
+
 use rowan::{GreenNode, GreenNodeBuilder, Language};
 
+use crate::lexer::{Lexer, SyntaxKind};
+use crate::syntax::{LangLanguage, SyntaxNode};
+
 pub struct Parser<'a> {
-    lexer: logos::Lexer<'a, SyntaxKind>,
+    lexer: Peekable<Lexer<'a>>,
     builder: GreenNodeBuilder<'static>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
-            lexer: SyntaxKind::lexer(input),
+            lexer: Lexer::new(input).peekable(),
             builder: GreenNodeBuilder::new(),
         }
     }
 
     pub fn parse(mut self) -> Parse {
-        self.builder.start_node(LangLanguage::kind_to_raw(SyntaxKind::Root));
-        self.builder.finish_node();
+        self.start_node(SyntaxKind::Root);
+
+        match self.peek() {
+            Some(SyntaxKind::Number) | Some(SyntaxKind::Ident) => self.bump(),
+            _ => {}
+        }
+
+        self.finish_node();
 
         Parse {
             green_node: self.builder.finish(),
@@ -31,6 +39,17 @@ impl<'a> Parser<'a> {
 
     fn finish_node(&mut self) {
         self.builder.finish_node();
+    }
+
+    fn peek(&mut self) -> Option<SyntaxKind> {
+        self.lexer.peek().map(|(kind, _)| *kind)
+    }
+
+    fn bump(&mut self) {
+        let (kind, text) = self.lexer.next().unwrap();
+
+        self.builder
+            .token(LangLanguage::kind_to_raw(kind), text.into());
     }
 }
 
@@ -50,9 +69,9 @@ impl Parse {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::syntax::SyntaxNode;
     use expect_test::{expect, Expect};
+
+    use super::*;
 
     fn check(input: &str, expected_tree: Expect) {
         let parse = Parser::new(input).parse();
@@ -62,5 +81,25 @@ mod tests {
     #[test]
     fn parse_nothing() {
         check("", expect![[r#"Root@0..0"#]]);
+    }
+
+    #[test]
+    fn parse_number() {
+        check(
+            "123",
+            expect![[r#"
+Root@0..3
+  Number@0..3 "123""#]],
+        );
+    }
+
+    #[test]
+    fn parse_binding_usage() {
+        check(
+            "counter",
+            expect![[r#"
+Root@0..7
+  Ident@0..7 "counter""#]],
+        );
     }
 }
