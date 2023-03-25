@@ -12,7 +12,7 @@ pub(crate) enum SyntaxKind {
     #[token("let")]
     LetKw,
 
-    #[regex("[A-Za-z][A-Za-z0-9]+")]
+    #[regex("[A-Za-z][A-Za-z0-9]*")]
     Ident,
 
     #[regex("[0-9]+")]
@@ -39,11 +39,18 @@ pub(crate) enum SyntaxKind {
     #[token("}")]
     RBrace,
 
+    #[token("(")]
+    LParen,
+
+    #[token(")")]
+    RParen,
+
     #[error]
     Error,
 
     Root,
-    BinOp,
+    BinaryExpr,
+    PrefixExpr,
 }
 
 pub(crate) struct Lexer<'a> {
@@ -109,6 +116,11 @@ mod tests {
     }
 
     #[test]
+    fn lex_single_char_identifier() {
+        check("x", SyntaxKind::Ident);
+    }
+
+    #[test]
     fn lex_number() {
         check("123456", SyntaxKind::Number);
     }
@@ -146,5 +158,15 @@ mod tests {
     #[test]
     fn lex_right_brace() {
         check("}", SyntaxKind::RBrace);
+    }
+
+    #[test]
+    fn lex_left_paren() {
+        check("(", SyntaxKind::LParen);
+    }
+
+    #[test]
+    fn lex_right_paren() {
+        check(")", SyntaxKind::RParen);
     }
 }
