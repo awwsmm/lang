@@ -1,62 +1,77 @@
+mod event;
+mod expr;
+mod sink;
+
 use std::iter::Peekable;
 
 use rowan::{Checkpoint, GreenNode, GreenNodeBuilder, Language};
 
-use crate::expr::expr;
 use crate::lexer::{Lexer, SyntaxKind};
+use crate::parser::event::Event;
+use crate::parser::expr::expr;
+use crate::parser::sink::Sink;
 use crate::syntax::{LangLanguage, SyntaxNode};
 
-pub struct Parser<'a> {
-    lexer: Peekable<Lexer<'a>>,
-    builder: GreenNodeBuilder<'static>,
+pub struct Parser<'l, 'input> {
+    lexemes: &'l [(SyntaxKind, &'input str)],
+    cursor: usize,
+    events: Vec<Event>,
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(input: &'a str) -> Self {
+impl<'l, 'input> Parser<'l, 'input> {
+    pub fn new(lexemes: &'l [(SyntaxKind, &'input str)]) -> Self {
+
+        fn split_at_mut(values: &mut [i32], mid: usize) -> (&mut [i32], &mut [i32]) {
+            let len = values.len();
+
+            assert!(mid <= len);
+
+            (&mut values[..mid], &mut values[mid..])
+        }
+
         Self {
-            lexer: Lexer::new(input).peekable(),
-            builder: GreenNodeBuilder::new(),
+            lexemes,
+            cursor: 0,
+            events: Vec::new(),
         }
     }
 
-    pub fn parse(mut self) -> Parse {
+    pub(crate) fn parse(mut self) -> Vec<Event> {
         self.start_node(SyntaxKind::Root);
-
         expr(&mut self);
-
         self.finish_node();
 
-        Parse {
-            green_node: self.builder.finish(),
-        }
-    }
-
-    pub(crate) fn start_node_at(&mut self, checkpoint: Checkpoint, kind: SyntaxKind) {
-        self.builder
-            .start_node_at(checkpoint, LangLanguage::kind_to_raw(kind));
+        self.events
     }
 
     fn start_node(&mut self, kind: SyntaxKind) {
-        self.builder.start_node(LangLanguage::kind_to_raw(kind))
+        self.events.push(Event::StartNode { kind });
+    }
+
+    pub(crate) fn start_node_at(&mut self, checkpoint: usize, kind: SyntaxKind) {
+        self.events.push(Event::StartNodeAt { kind, checkpoint });
     }
 
     pub(crate) fn finish_node(&mut self) {
-        self.builder.finish_node();
-    }
-
-    pub(crate) fn checkpoint(&self) -> Checkpoint {
-        self.builder.checkpoint()
-    }
-
-    pub(crate) fn peek(&mut self) -> Option<SyntaxKind> {
-        self.lexer.peek().map(|(kind, _)| *kind)
+        self.events.push(Event::FinishNode);
     }
 
     pub(crate) fn bump(&mut self) {
-        let (kind, text) = self.lexer.next().unwrap();
+        let (kind, text) = self.lexemes[self.cursor];
 
-        self.builder
-            .token(LangLanguage::kind_to_raw(kind), text.into());
+        self.cursor += 1;
+        self.events.push(Event::AddToken {
+            kind,
+            text: text.into()
+        });
+    }
+
+    pub(crate) fn checkpoint(&self) -> usize {
+        self.events.len()
+    }
+
+    pub(crate) fn peek(&mut self) -> Option<SyntaxKind> {
+        self.lexemes.get(self.cursor).map(|(kind, _)| *kind)
     }
 }
 
@@ -76,7 +91,7 @@ impl Parse {
 
 #[cfg(test)]
 pub(crate) fn check(input: &str, expected_tree: expect_test::Expect) {
-    let parse = Parser::new(input).parse();
+    let parse = parse(input);
     expected_tree.assert_eq(&parse.debug_tree());
 }
 

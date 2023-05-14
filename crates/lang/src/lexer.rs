@@ -2,7 +2,7 @@ use logos::Logos;
 use num_derive::{FromPrimitive, ToPrimitive};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Logos, FromPrimitive, ToPrimitive, Hash, PartialOrd, Ord)]
-pub(crate) enum SyntaxKind {
+pub enum SyntaxKind {
     #[regex(" +")]
     Whitespace,
 

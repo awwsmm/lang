@@ -1,7 +1,7 @@
 use crate::lexer::SyntaxKind;
 use crate::parser::Parser;
 
-pub(super) fn expr(p: &mut Parser) {
+pub(crate) fn expr(p: &mut Parser) {
     expr_binding_power(p, 0);
 }
 
